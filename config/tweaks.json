@@ -625,10 +625,10 @@
     "category": "Essential Tweaks",
     "panel": "1",
     "InvokeScript": [
-      "Disable-BitLocker -MountPoint $Env:SystemDrive"
+      "Disable-WinUtilBitLocker"
     ],
     "UndoScript": [
-      "Enable-BitLocker -MountPoint $Env:SystemDrive"
+      "Enable-WinUtilBitLocker"
     ],
     "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/disablebitlocker"
   },
