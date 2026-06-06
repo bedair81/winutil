@@ -1,3 +1,15 @@
+function Clear-WinUtilAppxCaches {
+    $sync.AppxPackageCache = $null
+    $sync.AppxProvisionedCache = $null
+}
+
+function Get-WinUtilAppxPackages {
+    if (-not $sync.AppxPackageCache) {
+        $sync.AppxPackageCache = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
+    }
+    return $sync.AppxPackageCache
+}
+
 function Get-WinUtilProvisionedPackages {
     if (-not $sync.AppxProvisionedCache) {
         $sync.AppxProvisionedCache = @(Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue)
@@ -22,12 +34,12 @@ function Remove-WinUtilAPPX {
         $Name
     )
 
-    $appxPackages = @(Get-AppxPackage $Name -AllUsers -ErrorAction SilentlyContinue)
+    $appxPackages = @(Get-WinUtilAppxPackages | Where-Object Name -like $Name)
     $provisionedPackages = @(Get-WinUtilProvisionedPackages | Where-Object DisplayName -like $Name)
 
     if ($appxPackages.Count -eq 0 -and $provisionedPackages.Count -eq 0) {
         Write-Host "Skip $Name - no Appx packages found."
-        return
+        return $false
     }
 
     Write-Host "Removing $Name"
@@ -38,6 +50,9 @@ function Remove-WinUtilAPPX {
         try {
             Remove-AppxPackage -Package $package.PackageFullName -AllUsers -ErrorAction Stop
             $removedAny = $true
+            if ($sync.AppxPackageCache) {
+                $sync.AppxPackageCache = @($sync.AppxPackageCache | Where-Object PackageFullName -ne $package.PackageFullName)
+            }
         } catch {
             Write-Warning "Failed to remove Appx package '$($package.PackageFullName)': $($_.Exception.Message)"
         }
@@ -47,12 +62,31 @@ function Remove-WinUtilAPPX {
         try {
             Remove-AppxProvisionedPackage -Online -PackageName $package.PackageName -ErrorAction Stop
             $removedAny = $true
+            if ($sync.AppxProvisionedCache) {
+                $sync.AppxProvisionedCache = @($sync.AppxProvisionedCache | Where-Object PackageName -ne $package.PackageName)
+            }
         } catch {
             Write-Warning "Failed to remove provisioned Appx package '$($package.PackageName)': $($_.Exception.Message)"
         }
     }
 
-    if ($removedAny) {
-        $sync.AppxProvisionedCache = $null
+    return $removedAny
+}
+
+function Invoke-WinUtilAppxRemovals {
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$Names
+    )
+
+    if ($Names.Count -eq 0) {
+        return
+    }
+
+    Get-WinUtilAppxPackages | Out-Null
+    Get-WinUtilProvisionedPackages | Out-Null
+
+    foreach ($appxName in $Names) {
+        Remove-WinUtilAPPX -Name $appxName | Out-Null
     }
 }
