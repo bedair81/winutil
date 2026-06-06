@@ -52,6 +52,114 @@ function Get-WinUtilProvisionedPackages {
     return $sync.AppxProvisionedCache
 }
 
+function Stop-WinUtilAppxRelatedProcesses {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    $patterns = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $null = $patterns.Add($Name)
+
+    $shortName = $Name.Split('.')[-1]
+    if ($shortName) {
+        $null = $patterns.Add($shortName)
+    }
+
+    foreach ($pattern in $patterns) {
+        Get-Process -Name "*$pattern*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-WinUtilAppxUserSids {
+    param(
+        [Parameter(Mandatory)]
+        $Package
+    )
+
+    $sids = [System.Collections.Generic.List[string]]::new()
+
+    if ($Package.PackageUserInformation) {
+        foreach ($userInfo in $Package.PackageUserInformation) {
+            if ($userInfo.UserSecurityId.Sid) {
+                $sids.Add($userInfo.UserSecurityId.Sid) | Out-Null
+            }
+        }
+    }
+
+    if ($sids.Count -eq 0) {
+        try {
+            foreach ($user in Get-LocalUser | Where-Object { $_.Enabled }) {
+                $sids.Add($user.SID.Value) | Out-Null
+            }
+        } catch {
+            $sids.Add((Get-LocalUser $Env:UserName).Sid.Value) | Out-Null
+        }
+    }
+
+    return @($sids | Select-Object -Unique)
+}
+
+function Set-WinUtilAppxEndOfLife {
+    param(
+        [Parameter(Mandatory)]
+        [string]$PackageFullName,
+
+        [Parameter(Mandatory)]
+        [string[]]$UserSids
+    )
+
+    foreach ($sid in $UserSids) {
+        $path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\EndOfLife\$sid\$PackageFullName"
+        New-Item -Path $path -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+}
+
+function Remove-WinUtilAppxPackageInstance {
+    param(
+        [Parameter(Mandatory)]
+        $Package
+    )
+
+    $packageFullName = $Package.PackageFullName
+
+    try {
+        Remove-AppxPackage -Package $packageFullName -AllUsers -ErrorAction Stop
+        return $true
+    } catch {
+        Write-WinUtilAppxLog "AllUsers removal failed for $packageFullName ($($_.Exception.Message)). Trying fallbacks..."
+    }
+
+    $userSids = Get-WinUtilAppxUserSids -Package $Package
+    Set-WinUtilAppxEndOfLife -PackageFullName $packageFullName -UserSids $userSids
+
+    try {
+        Remove-AppxPackage -Package $packageFullName -AllUsers -ErrorAction Stop
+        return $true
+    } catch {
+        Write-WinUtilAppxLog "Retry after EndOfLife failed for $packageFullName ($($_.Exception.Message)). Trying per-user removal..."
+    }
+
+    $removedAny = $false
+    if ($Package.PackageUserInformation) {
+        foreach ($userInfo in $Package.PackageUserInformation) {
+            $userId = if ($userInfo.UserSecurityId.Sid) { $userInfo.UserSecurityId.Sid } else { $userInfo.UserSecurityId.FullName }
+            if (-not $userId) {
+                continue
+            }
+
+            try {
+                Remove-AppxPackage -Package $packageFullName -User $userId -ErrorAction Stop
+                $removedAny = $true
+            } catch {
+                Write-Warning "Failed to remove Appx package '$packageFullName' for user '$userId': $($_.Exception.Message)"
+            }
+        }
+    }
+
+    return $removedAny
+}
+
 function Remove-WinUtilAPPX {
     <#
 
@@ -78,20 +186,9 @@ function Remove-WinUtilAPPX {
     }
 
     Write-WinUtilAppxLog "Removing $Name ($($appxPackages.Count) installed, $($provisionedPackages.Count) provisioned)"
+    Stop-WinUtilAppxRelatedProcesses -Name $Name
 
     $removedAny = $false
-
-    foreach ($package in $appxPackages) {
-        try {
-            Remove-AppxPackage -Package $package.PackageFullName -AllUsers -ErrorAction Stop
-            $removedAny = $true
-            if ($sync.AppxPackageCache) {
-                $sync.AppxPackageCache = @($sync.AppxPackageCache | Where-Object PackageFullName -ne $package.PackageFullName)
-            }
-        } catch {
-            Write-Warning "Failed to remove Appx package '$($package.PackageFullName)': $($_.Exception.Message)"
-        }
-    }
 
     foreach ($package in $provisionedPackages) {
         try {
@@ -102,6 +199,17 @@ function Remove-WinUtilAPPX {
             }
         } catch {
             Write-Warning "Failed to remove provisioned Appx package '$($package.PackageName)': $($_.Exception.Message)"
+        }
+    }
+
+    foreach ($package in $appxPackages) {
+        if (Remove-WinUtilAppxPackageInstance -Package $package) {
+            $removedAny = $true
+            if ($sync.AppxPackageCache) {
+                $sync.AppxPackageCache = @($sync.AppxPackageCache | Where-Object PackageFullName -ne $package.PackageFullName)
+            }
+        } else {
+            Write-Warning "Failed to remove Appx package '$($package.PackageFullName)' after all fallback attempts."
         }
     }
 

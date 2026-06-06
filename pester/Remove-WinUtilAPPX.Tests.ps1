@@ -55,14 +55,45 @@ Describe 'Remove-WinUtilAPPX' {
         $global:sync.AppxProvisionedCache[0].DisplayName | Should -Be 'Other.App'
     }
 
-    It 'Writes warning when package removal fails' {
+    It 'Writes warning when package removal fails after fallbacks' {
         $global:sync.AppxPackageCache = @([PSCustomObject]@{ Name = 'Contoso.App'; PackageFullName = 'Contoso.App_1.0' })
-        Mock Remove-AppxPackage { throw 'remove failed' }
-        Mock Write-Warning { } -ParameterFilter { $Message -like '*remove failed*' }
+        Mock Remove-AppxPackage { throw 'Access is denied.' }
+        Mock Get-LocalUser { [PSCustomObject]@{ SID = [PSCustomObject]@{ Value = 'S-1-5-21-1' }; Enabled = $true } }
+        Mock Write-Warning { } -ParameterFilter { $Message -like '*after all fallback attempts*' }
 
         Remove-WinUtilAPPX -Name 'Contoso.App'
 
-        Should -Invoke Write-Warning -ParameterFilter { $Message -like '*remove failed*' }
+        Should -Invoke Write-Warning -ParameterFilter { $Message -like '*after all fallback attempts*' }
+    }
+
+    It 'Retries removal with EndOfLife when AllUsers removal is denied' {
+        $package = [PSCustomObject]@{
+            Name                   = 'Microsoft.Windows.DevHome'
+            PackageFullName        = 'Microsoft.Windows.DevHome_1.0_x64__8wekyb3d8bbwe'
+            PackageUserInformation = @(
+                [PSCustomObject]@{
+                    UserSecurityId = [PSCustomObject]@{
+                        Sid      = 'S-1-5-21-1000'
+                        FullName = 'TEST\user'
+                    }
+                }
+            )
+        }
+        $global:sync.AppxPackageCache = @($package)
+
+        $callCount = 0
+        Mock Remove-AppxPackage {
+            $script:callCount++
+            if ($script:callCount -le 2) {
+                throw 'Access is denied.'
+            }
+        }
+        Mock New-Item { }
+
+        Remove-WinUtilAPPX -Name 'Microsoft.Windows.DevHome'
+
+        Should -Invoke Remove-AppxPackage -Times 3
+        Should -Invoke New-Item -ParameterFilter { $Path -like '*EndOfLife*S-1-5-21-1000*' } -Times 1
     }
 }
 
