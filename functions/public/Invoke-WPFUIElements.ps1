@@ -195,7 +195,7 @@ function Invoke-WPFUIElements {
                                 [System.Object]$Sender = $args[0]
                                 if ($sync.SuppressToggleEvents) { return }
 
-                                $action = Test-WPFToggleActionAllowed -ImportInProgress:$sync.ImportInProgress
+                                $action = Test-WPFToggleActionAllowed
                                 if (-not $action.Allowed) {
                                     Set-WPFToggleCheckedState -ToggleName $Sender.name -IsChecked $false
                                     return
@@ -220,7 +220,7 @@ function Invoke-WPFUIElements {
                                 [System.Object]$Sender = $args[0]
                                 if ($sync.SuppressToggleEvents) { return }
 
-                                $action = Test-WPFToggleActionAllowed -ImportInProgress:$sync.ImportInProgress
+                                $action = Test-WPFToggleActionAllowed
                                 if (-not $action.Allowed) {
                                     Set-WPFToggleCheckedState -ToggleName $Sender.name -IsChecked $true
                                     return

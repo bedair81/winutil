@@ -13,15 +13,20 @@ BeforeAll {
 
 Describe 'Test-WPFToggleActionAllowed' {
     It 'Blocks when import is in progress' {
-        $result = Test-WPFToggleActionAllowed -ImportInProgress $true
-        $result.Allowed | Should -Be $false
-        $result.Reason | Should -Be 'ImportInProgress'
+        $global:sync.ImportInProgress = $true
+        try {
+            $result = Test-WPFToggleActionAllowed
+            $result.Allowed | Should -Be $false
+            $result.Reason | Should -Be 'ImportInProgress'
+        } finally {
+            $global:sync.ImportInProgress = $false
+        }
     }
 
     It 'Blocks when a batch process is running' {
         $global:sync.ProcessRunning = $true
         try {
-            $result = Test-WPFToggleActionAllowed -ImportInProgress $false
+            $result = Test-WPFToggleActionAllowed
             $result.Allowed | Should -Be $false
             $result.Reason | Should -Be 'ProcessBusy'
         } finally {
@@ -32,7 +37,7 @@ Describe 'Test-WPFToggleActionAllowed' {
     It 'Blocks when toggle jobs are active' {
         $global:sync.ActiveToggleJobs = 1
         try {
-            $result = Test-WPFToggleActionAllowed -ImportInProgress $false
+            $result = Test-WPFToggleActionAllowed
             $result.Allowed | Should -Be $false
         } finally {
             $global:sync.ActiveToggleJobs = 0
@@ -40,8 +45,18 @@ Describe 'Test-WPFToggleActionAllowed' {
     }
 
     It 'Allows action when idle' {
-        $result = Test-WPFToggleActionAllowed -ImportInProgress $false
+        $result = Test-WPFToggleActionAllowed
         $result.Allowed | Should -Be $true
+    }
+
+    It 'Allows action when ImportInProgress is unset' {
+        $global:sync.Remove('ImportInProgress')
+        try {
+            $result = Test-WPFToggleActionAllowed
+            $result.Allowed | Should -Be $true
+        } finally {
+            $global:sync.ImportInProgress = $false
+        }
     }
 }
 

@@ -15,11 +15,7 @@ function Test-WinUtilProcessBusy {
 }
 
 function Test-WPFToggleActionAllowed {
-    param(
-        [bool]$ImportInProgress
-    )
-
-    if ($ImportInProgress) {
+    if ($sync.ImportInProgress -eq $true) {
         return @{ Allowed = $false; Reason = 'ImportInProgress' }
     }
 
