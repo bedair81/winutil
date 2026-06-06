@@ -68,9 +68,11 @@ function Invoke-WinUtilExplorerUpdate {
     }
 
     if ($action -eq "taskbar") {
-        Invoke-WinUtilExplorerBroadcast -Setting 'TraySettings'
-        Start-Sleep -Milliseconds 500
-        $action = 'restart'
+        Write-Host 'Refreshing taskbar settings without restarting Explorer...'
+        foreach ($setting in @('TraySettings', 'WindowsExplorer', 'Policy')) {
+            Invoke-WinUtilExplorerBroadcast -Setting $setting
+        }
+        return
     }
 
     if ($action -eq "restart") {

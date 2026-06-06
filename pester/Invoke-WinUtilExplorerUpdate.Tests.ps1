@@ -35,14 +35,15 @@ Describe 'Invoke-WinUtilExplorerUpdate' {
         Should -Invoke Restart-WinUtilExplorerShell -Times 1
     }
 
-    It 'Uses taskbar refresh then restarts Explorer for taskbar changes' {
+    It 'Refreshes taskbar settings without restarting Explorer' {
         Mock Invoke-WinUtilExplorerBroadcast { }
         Mock Restart-WinUtilExplorerShell { }
-        Mock Invoke-WPFUIThread { param($ScriptBlock) & $ScriptBlock }
 
         Invoke-WinUtilExplorerUpdate -action 'taskbar'
 
         Should -Invoke Invoke-WinUtilExplorerBroadcast -ParameterFilter { $Setting -eq 'TraySettings' } -Times 1
-        Should -Invoke Restart-WinUtilExplorerShell -Times 1
+        Should -Invoke Invoke-WinUtilExplorerBroadcast -ParameterFilter { $Setting -eq 'WindowsExplorer' } -Times 1
+        Should -Invoke Invoke-WinUtilExplorerBroadcast -ParameterFilter { $Setting -eq 'Policy' } -Times 1
+        Should -Invoke Restart-WinUtilExplorerShell -Times 0
     }
 }

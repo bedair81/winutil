@@ -914,6 +914,9 @@
         "OriginalValue": "<RemoveEntry>"
       }
     ],
+    "InvokeScript": [
+      "Invoke-WinUtilExplorerUpdate -action \"taskbar\""
+    ],
     "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/endtaskontaskbar"
   },
   "WPFTweaksStorage": {
@@ -1771,6 +1774,12 @@
         "DefaultState": "true"
       }
     ],
+    "InvokeScript": [
+      "Invoke-WinUtilExplorerUpdate -action \"taskbar\""
+    ],
+    "UndoScript": [
+      "Invoke-WinUtilExplorerUpdate -action \"taskbar\""
+    ],
     "link": "https://winutil.christitus.com/dev/tweaks/customize-preferences/taskbarsearch"
   },
   "WPFToggleTaskView": {
@@ -1788,6 +1797,12 @@
         "OriginalValue": "0",
         "DefaultState": "true"
       }
+    ],
+    "InvokeScript": [
+      "Invoke-WinUtilExplorerUpdate -action \"taskbar\""
+    ],
+    "UndoScript": [
+      "Invoke-WinUtilExplorerUpdate -action \"taskbar\""
     ],
     "link": "https://winutil.christitus.com/dev/tweaks/customize-preferences/taskview"
   },
