@@ -16,11 +16,11 @@ function Import-WinUtilBitLockerModule {
     $modulePath = Join-Path $env:Windir 'System32\WindowsPowerShell\v1.0\Modules\BitLocker\BitLocker.psd1'
 
     if (Test-Path $modulePath) {
-        Import-Module $modulePath -Force -ErrorAction Stop
+        Import-Module $modulePath -Force -WarningAction SilentlyContinue -ErrorAction Stop
         return
     }
 
-    Import-Module BitLocker -Force -SkipEditionCheck -ErrorAction Stop
+    Import-Module BitLocker -Force -SkipEditionCheck -WarningAction SilentlyContinue -ErrorAction Stop
 }
 
 function Get-WinUtilBitLockerMountPoint {
