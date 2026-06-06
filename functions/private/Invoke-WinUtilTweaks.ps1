@@ -64,15 +64,27 @@ function Invoke-WinUtilTweaks {
         }
     }
     if ($sync.configs.tweaks.$CheckBox.$($values.ScriptType)) {
+        $tweakLabel = $sync.configs.tweaks.$CheckBox.Content
+        if (-not $tweakLabel) {
+            $tweakLabel = $CheckBox
+        }
+
+        Write-Host "$(Get-Date -Format 'HH:mm:ss') [$CheckBox] Running script phase for '$tweakLabel'..."
         $sync.configs.tweaks.$CheckBox.$($values.ScriptType) | ForEach-Object {
             $Scriptblock = [scriptblock]::Create($psitem)
             Invoke-WinUtilScript -ScriptBlock $scriptblock -Name $CheckBox
         }
+        Write-Host "$(Get-Date -Format 'HH:mm:ss') [$CheckBox] Script phase finished."
     }
 
     if (!$undo) {
         if ($sync.configs.tweaks.$CheckBox.appx) {
-            Invoke-WinUtilAppxRemovals -Names @($sync.configs.tweaks.$CheckBox.appx)
+            $tweakLabel = $sync.configs.tweaks.$CheckBox.Content
+            if (-not $tweakLabel) {
+                $tweakLabel = $CheckBox
+            }
+
+            Invoke-WinUtilAppxRemovals -Names @($sync.configs.tweaks.$CheckBox.appx) -TweakName $tweakLabel
         }
     }
 }

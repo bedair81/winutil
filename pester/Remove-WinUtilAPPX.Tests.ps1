@@ -78,4 +78,19 @@ Describe 'Invoke-WinUtilAppxRemovals' {
         Should -Invoke Get-AppxPackage -Times 1
         Should -Invoke Get-AppxProvisionedPackage -Times 1
     }
+
+    It 'Writes progress logs for scan and per-package steps' {
+        Mock Get-AppxPackage { @() }
+        Mock Get-AppxProvisionedPackage { @() }
+
+        $logs = [System.Collections.Generic.List[string]]::new()
+        Mock Write-Host { $logs.Add($Object) }
+
+        Invoke-WinUtilAppxRemovals -Names @('Contoso.App', 'Other.App') -TweakName 'DeBloat Test'
+
+        $logText = $logs -join "`n"
+        $logText | Should -Match 'Scanning installed packages'
+        $logText | Should -Match 'Processing Contoso\.App'
+        $logText | Should -Match 'Completed DeBloat Test'
+    }
 }

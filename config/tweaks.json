@@ -865,14 +865,18 @@
     ],
     "InvokeScript": [
       "
+      Write-Host \"$(Get-Date -Format 'HH:mm:ss') [DeBloat] Checking for classic Teams install...\"
       $TeamsPath = \"$Env:LocalAppData\\Microsoft\\Teams\\Update.exe\"
 
       if (Test-Path $TeamsPath) {
-        Write-Host \"Uninstalling Teams\"
+        Write-Host \"$(Get-Date -Format 'HH:mm:ss') [DeBloat] Uninstalling Teams (this may take several minutes)...\"
         Start-Process $TeamsPath -ArgumentList -uninstall -wait
 
-        Write-Host \"Deleting Teams directory\"
+        Write-Host \"$(Get-Date -Format 'HH:mm:ss') [DeBloat] Teams uninstalled, cleaning up install folder...\"
         Remove-Item $TeamsPath -Recurse -Force
+        Write-Host \"$(Get-Date -Format 'HH:mm:ss') [DeBloat] Teams cleanup finished.\"
+      } else {
+        Write-Host \"$(Get-Date -Format 'HH:mm:ss') [DeBloat] Classic Teams not found, skipping uninstall.\"
       }
       "
     ],
