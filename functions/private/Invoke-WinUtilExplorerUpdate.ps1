@@ -1,17 +1,10 @@
-function Invoke-WinUtilExplorerUpdate {
-     <#
-    .SYNOPSIS
-        Refreshes the Windows Explorer
-    #>
-    param (
-        [string]$action = "refresh"
+function Invoke-WinUtilExplorerBroadcast {
+    param(
+        [string]$Setting = 'ImmersiveColorSet'
     )
 
-    if ($action -eq "refresh") {
-        Invoke-WPFRunspace -ScriptBlock {
-            # Define the Win32 type only if it doesn't exist
-            if (-not ([System.Management.Automation.PSTypeName]'Win32').Type) {
-                Add-Type -TypeDefinition @"
+    if (-not ([System.Management.Automation.PSTypeName]'Win32').Type) {
+        Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 public class Win32 {
@@ -21,18 +14,70 @@ public class Win32 {
         uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
 }
 "@
-            }
+    }
 
-            $HWND_BROADCAST = [IntPtr]0xffff
-            $WM_SETTINGCHANGE = 0x1A
-            $SMTO_ABORTIFHUNG = 0x2
+    $HWND_BROADCAST = [IntPtr]0xffff
+    $WM_SETTINGCHANGE = 0x1A
+    $SMTO_ABORTIFHUNG = 0x2
 
-            [Win32]::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE,
-                [IntPtr]::Zero, "ImmersiveColorSet", $SMTO_ABORTIFHUNG, 100,
-                [ref]([IntPtr]::Zero))
+    [Win32]::SendMessageTimeout(
+        $HWND_BROADCAST,
+        $WM_SETTINGCHANGE,
+        [IntPtr]::Zero,
+        $Setting,
+        $SMTO_ABORTIFHUNG,
+        1000,
+        [ref]([IntPtr]::Zero)
+    ) | Out-Null
+}
+
+function Restart-WinUtilExplorerShell {
+    Write-Host 'Restarting Explorer shell to apply changes...'
+
+    if (Get-Process -Name explorer -ErrorAction SilentlyContinue) {
+        Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+
+        $waited = 0
+        while ((Get-Process -Name explorer -ErrorAction SilentlyContinue) -and $waited -lt 20) {
+            Start-Sleep -Milliseconds 250
+            $waited++
         }
-    } elseif ($action -eq "restart") {
-        taskkill.exe /F /IM "explorer.exe"
-        Start-Process "explorer.exe"
+    }
+
+    Start-Sleep -Milliseconds 500
+
+    if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) {
+        Start-Process -FilePath "$env:WINDIR\explorer.exe"
+    }
+}
+
+function Invoke-WinUtilExplorerUpdate {
+    <#
+    .SYNOPSIS
+        Refreshes or restarts the Windows Explorer shell.
+    #>
+    param (
+        [string]$action = "refresh"
+    )
+
+    if ($action -eq "refresh") {
+        Invoke-WPFRunspace -ScriptBlock {
+            Invoke-WinUtilExplorerBroadcast -Setting 'ImmersiveColorSet'
+        }
+        return
+    }
+
+    if ($action -eq "taskbar") {
+        Invoke-WinUtilExplorerBroadcast -Setting 'TraySettings'
+        Start-Sleep -Milliseconds 500
+        $action = 'restart'
+    }
+
+    if ($action -eq "restart") {
+        if ($PARAM_NOUI) {
+            Restart-WinUtilExplorerShell
+        } else {
+            Invoke-WPFUIThread -ScriptBlock { Restart-WinUtilExplorerShell }
+        }
     }
 }
