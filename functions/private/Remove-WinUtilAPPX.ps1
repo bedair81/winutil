@@ -45,10 +45,76 @@ function Get-WinUtilAppxPackages {
     return $sync.AppxPackageCache
 }
 
-function Get-WinUtilProvisionedPackages {
-    if (-not $sync.AppxProvisionedCache) {
-        $sync.AppxProvisionedCache = @(Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue)
+function Remove-WinUtilProvisionedPackageInstance {
+    param(
+        [Parameter(Mandatory)]
+        [string]$PackageName
+    )
+
+    try {
+        Remove-AppxProvisionedPackage -Online -PackageName $PackageName -ErrorAction Stop
+        return $true
+    } catch {
+        Write-WinUtilAppxLog "Remove-AppxProvisionedPackage failed for $PackageName ($($_.Exception.Message)). Trying Windows PowerShell..."
     }
+
+    try {
+        $escapedName = $PackageName.Replace("'", "''")
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Remove-AppxProvisionedPackage -Online -PackageName '$escapedName' -ErrorAction Stop" | Out-Null
+        return $true
+    } catch {
+        Write-Warning "Failed to remove provisioned Appx package '$PackageName': $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Get-WinUtilProvisionedPackagesFromWindowsPowerShell {
+    try {
+        $json = & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command @'
+$items = @(Get-AppxProvisionedPackage -Online -ErrorAction Stop | Select-Object DisplayName, PackageName)
+if ($items.Count -eq 0) { '[]' } else { $items | ConvertTo-Json -Compress }
+'@
+
+        if ([string]::IsNullOrWhiteSpace($json)) {
+            return $null
+        }
+
+        return @($json | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
+function Get-WinUtilProvisionedPackages {
+    if ($null -ne $sync.AppxProvisionedCache) {
+        return $sync.AppxProvisionedCache
+    }
+
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        $fromWindowsPowerShell = Get-WinUtilProvisionedPackagesFromWindowsPowerShell
+        if ($null -ne $fromWindowsPowerShell) {
+            Write-WinUtilAppxLog "Provisioned package scan loaded via Windows PowerShell ($($fromWindowsPowerShell.Count) packages)."
+            $sync.AppxProvisionedCache = @($fromWindowsPowerShell)
+            return $sync.AppxProvisionedCache
+        }
+    }
+
+    try {
+        $sync.AppxProvisionedCache = @(Get-AppxProvisionedPackage -Online -ErrorAction Stop)
+        return $sync.AppxProvisionedCache
+    } catch {
+        Write-WinUtilAppxLog "Get-AppxProvisionedPackage failed ($($_.Exception.Message))."
+    }
+
+    $fromWindowsPowerShell = Get-WinUtilProvisionedPackagesFromWindowsPowerShell
+    if ($null -ne $fromWindowsPowerShell) {
+        Write-WinUtilAppxLog "Provisioned package scan loaded via Windows PowerShell ($($fromWindowsPowerShell.Count) packages)."
+        $sync.AppxProvisionedCache = @($fromWindowsPowerShell)
+        return $sync.AppxProvisionedCache
+    }
+
+    Write-WinUtilAppxLog 'Provisioned package scan unavailable. Continuing with installed packages only.'
+    $sync.AppxProvisionedCache = @()
     return $sync.AppxProvisionedCache
 }
 
@@ -191,14 +257,11 @@ function Remove-WinUtilAPPX {
     $removedAny = $false
 
     foreach ($package in $provisionedPackages) {
-        try {
-            Remove-AppxProvisionedPackage -Online -PackageName $package.PackageName -ErrorAction Stop
+        if (Remove-WinUtilProvisionedPackageInstance -PackageName $package.PackageName) {
             $removedAny = $true
             if ($sync.AppxProvisionedCache) {
                 $sync.AppxProvisionedCache = @($sync.AppxProvisionedCache | Where-Object PackageName -ne $package.PackageName)
             }
-        } catch {
-            Write-Warning "Failed to remove provisioned Appx package '$($package.PackageName)': $($_.Exception.Message)"
         }
     }
 
@@ -240,9 +303,14 @@ function Invoke-WinUtilAppxRemovals {
     Write-WinUtilAppxLog "Installed package scan finished in $($stopwatch.Elapsed.ToString('mm\:ss'))"
 
     Update-WinUtilAppxProgressLabel "$label : Scanning provisioned packages..."
-    Write-WinUtilAppxLog "Scanning provisioned packages (Get-AppxProvisionedPackage -Online)..."
-    Get-WinUtilProvisionedPackages | Out-Null
-    Write-WinUtilAppxLog "Provisioned package scan finished in $($stopwatch.Elapsed.ToString('mm\:ss'))"
+    Write-WinUtilAppxLog "Scanning provisioned packages..."
+    try {
+        Get-WinUtilProvisionedPackages | Out-Null
+        Write-WinUtilAppxLog "Provisioned package scan finished in $($stopwatch.Elapsed.ToString('mm\:ss'))"
+    } catch {
+        Write-WinUtilAppxLog "Provisioned package scan skipped ($($_.Exception.Message)). Continuing with installed packages only."
+        $sync.AppxProvisionedCache = @()
+    }
 
     $index = 0
     foreach ($appxName in $Names) {

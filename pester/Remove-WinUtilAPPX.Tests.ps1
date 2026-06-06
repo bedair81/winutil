@@ -4,6 +4,10 @@ BeforeAll {
 }
 
 Describe 'Remove-WinUtilAPPX' {
+    BeforeEach {
+        $global:sync.AppxPackageCache = $null
+        $global:sync.AppxProvisionedCache = $null
+    }
     It 'Skips removal when no packages are found' {
         Mock Get-AppxPackage { @() }
         Mock Get-AppxProvisionedPackage { @() }
@@ -30,13 +34,15 @@ Describe 'Remove-WinUtilAPPX' {
 
     It 'Uses cached provisioned packages across calls' {
         Mock Get-AppxPackage { @() }
-        Mock Get-AppxProvisionedPackage { [PSCustomObject]@{ DisplayName = 'Contoso.App'; PackageName = 'Contoso.App_1.0' } }
+        Mock Get-WinUtilProvisionedPackagesFromWindowsPowerShell {
+            [PSCustomObject]@{ DisplayName = 'Contoso.App'; PackageName = 'Contoso.App_1.0' }
+        }
         Mock Remove-AppxProvisionedPackage { }
 
         Remove-WinUtilAPPX -Name 'Contoso.App'
         Remove-WinUtilAPPX -Name 'Contoso.App'
 
-        Should -Invoke Get-AppxProvisionedPackage -Times 1
+        Should -Invoke Get-WinUtilProvisionedPackagesFromWindowsPowerShell -Times 1
     }
 
     It 'Removes package from caches after successful removal' {
@@ -64,6 +70,16 @@ Describe 'Remove-WinUtilAPPX' {
         Remove-WinUtilAPPX -Name 'Contoso.App'
 
         Should -Invoke Write-Warning -ParameterFilter { $Message -like '*after all fallback attempts*' }
+    }
+
+    It 'Continues when provisioned package scan is unavailable' {
+        Mock Get-AppxPackage { @() }
+        Mock Get-AppxProvisionedPackage { throw 'Class not registered' }
+        Mock Get-WinUtilProvisionedPackagesFromWindowsPowerShell { $null }
+
+        { Invoke-WinUtilAppxRemovals -Names @('Contoso.App') } | Should -Not -Throw
+
+        $global:sync.AppxProvisionedCache.Count | Should -Be 0
     }
 
     It 'Retries removal with EndOfLife when AllUsers removal is denied' {
@@ -98,16 +114,21 @@ Describe 'Remove-WinUtilAPPX' {
 }
 
 Describe 'Invoke-WinUtilAppxRemovals' {
+    BeforeEach {
+        $global:sync.AppxPackageCache = $null
+        $global:sync.AppxProvisionedCache = $null
+    }
+
     It 'Loads package lists once for a batch of removals' {
         Mock Get-AppxPackage { @() }
-        Mock Get-AppxProvisionedPackage { @() }
+        Mock Get-WinUtilProvisionedPackagesFromWindowsPowerShell { @() }
         Mock Remove-AppxPackage { }
         Mock Remove-AppxProvisionedPackage { }
 
         Invoke-WinUtilAppxRemovals -Names @('Contoso.App', 'Other.App', 'Third.App')
 
         Should -Invoke Get-AppxPackage -Times 1
-        Should -Invoke Get-AppxProvisionedPackage -Times 1
+        Should -Invoke Get-WinUtilProvisionedPackagesFromWindowsPowerShell -Times 1
     }
 
     It 'Writes progress logs for scan and per-package steps' {
